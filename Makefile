@@ -19,3 +19,6 @@ install:
 
 uninstall:
 	guix shell -m manifest.scm -- cargo uninstall
+
+test:
+	guix shell -m manifest.scm -- cargo test
