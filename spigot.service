@@ -1,5 +1,5 @@
 [Unit]
-Description=Unix Socket HTTP Server
+Description=Spigot, A Unix Socket HTTP Server
 
 [Service]
 ExecStart=%h/.cargo/bin/spigot
