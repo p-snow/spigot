@@ -2,7 +2,7 @@
 Description=Unix Socket HTTP Server
 
 [Service]
-ExecStart=%h/.cargo/bin/socket-http-server
+ExecStart=%h/.cargo/bin/spigot
 Restart=always
 Type=simple
 

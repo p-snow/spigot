@@ -12,7 +12,7 @@ fn test_socket_server_responds_to_valid_request() {
 
     // Start the server in the background
     let mut server_process = Command::new("cargo")
-        .args(["run", "--bin", "socket-http-server"])
+        .args(["run", "--bin", "spigot"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -22,12 +22,14 @@ fn test_socket_server_responds_to_valid_request() {
     thread::sleep(Duration::from_secs(2));
 
     // Attempt to connect to the socket
-    let mut stream = UnixStream::connect("/tmp/socket-http-server.sock")
-        .expect("Failed to connect to socket at /tmp/socket-http-server.sock");
+    let mut stream = UnixStream::connect("/tmp/spigot.sock")
+        .expect("Failed to connect to socket at /tmp/spigot.sock");
 
     // Send a valid HTTP GET request
     let request_payload = "GET /info/fs/avail?file=/ HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    stream.write_all(request_payload.as_bytes()).expect("Failed to send request");
+    stream
+        .write_all(request_payload.as_bytes())
+        .expect("Failed to send request");
 
     // Read the server's response
     let mut response_buffer = [0u8; 1024];

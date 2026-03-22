@@ -1,4 +1,4 @@
-* Socket HTTP Server
+* Spigot
 
 A simple implementation of a Unix Domain Socket server providing an HTTP service that interprets requests into command strings and invokes them on the machine.
 

@@ -47,15 +47,12 @@ pub fn execute_command(header: &str) -> Option<String> {
 ///
 /// # Returns
 /// A string containing the available space in human-readable format, or None if unavailable
-fn handle_filesystem_endpoint(
-    path: &str,
-    parameters: &HashMap<String, String>,
-) -> Option<String> {
+fn handle_filesystem_endpoint(path: &str, parameters: &HashMap<String, String>) -> Option<String> {
     match path {
         "/info/fs/avail" => {
             let file_path = parameters.get("file")?;
             get_filesystem_availability(file_path)
-        }
+        },
         _ => None,
     }
 }

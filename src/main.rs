@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::thread;
 
-const DOMAIN_SOCKET_PATH: &str = "/tmp/socket-http-server.sock";
+const DOMAIN_SOCKET_PATH: &str = "/tmp/spigot.sock";
 
 fn main() -> std::io::Result<()> {
     // Remove existing socket if it already exists
@@ -23,11 +23,11 @@ fn main() -> std::io::Result<()> {
             Ok(stream) => {
                 println!("Got a client connection");
                 thread::spawn(|| handle_client(stream));
-            }
+            },
             Err(error) => {
                 eprintln!("Error listening: {error}");
                 break;
-            }
+            },
         }
     }
 
@@ -49,7 +49,8 @@ fn handle_client(mut stream: UnixStream) -> std::io::Result<()> {
 
     println!("Received request:\n{received_request}");
 
-    let response = socket_http_server::execute_command(received_request);
+    use spigot::execute_command;
+    let response = execute_command(received_request);
 
     // Prepare HTTP response
     stream.write_all(b"HTTP/1.1 200 OK\r\n")?;
@@ -61,12 +62,12 @@ fn handle_client(mut stream: UnixStream) -> std::io::Result<()> {
             stream.write_all(format!("Content-Length: {content_length}\r\n").as_bytes())?;
             stream.write_all(b"\r\n")?;
             stream.write_all(response_body.as_bytes())?;
-        }
+        },
         None => {
             stream.write_all(b"Content-Length: 0\r\n")?;
             stream.write_all(b"\r\n")?;
             eprintln!("Warning: HTTP response issued with zero-length body");
-        }
+        },
     }
 
     Ok(())

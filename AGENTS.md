@@ -1,4 +1,4 @@
-# Socket HTTP server
+# Spigot
 
 
 ## Coding Standards
