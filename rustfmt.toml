@@ -1,0 +1,49 @@
+# Rustfmt Configuration
+# Aligned and readable code formatting
+
+# Use maximum line width of 100 characters
+max_width = 100
+
+# Use tab indentation
+tab_spaces = 4
+
+# Format strings in a readable way
+format_strings = true
+
+# Use short boolean syntax
+bool = true
+
+# Space around operators
+format_code_in_doc_comments = true
+
+# Use explicit null checking
+control_brace_style = "AlwaysSameLine"
+
+# Use stable/unstable features
+unstable_features = true
+
+# Keep line breaks around chained calls
+chain_width = 60
+
+# Use short functions
+fn_single_line = false
+
+# Import formatting
+imports_layout = "HorizontalVertical"
+
+# Comment formatting
+struct_variant_width = 24
+enum_variant_width = 24
+fn_call_width = 60
+
+# Match arm formatting
+match_block_trailing_comma = true
+
+# Function attributes before function name
+function_attribute_visibility = "Visible"
+
+# Use verbose named fields
+force_explicit_abi = true
+
+# Keep trailing commas
+trailing_comma = "Vertical"
