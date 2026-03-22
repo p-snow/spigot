@@ -1,71 +1,71 @@
-use std::os::unix::net::UnixListener;
-use std::os::unix::net::UnixStream;
-use std::thread;
 use std::fs;
-use std::io::Read;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::thread;
 
-static DOMAIN_SOCK: &str = "/run/socket-http-server/machine-info.sock";
+const DOMAIN_SOCKET_PATH: &str = "/tmp/socket-http-server.sock";
 
 fn main() -> std::io::Result<()> {
-    // remove existing socket up-front
-    if fs::metadata(&DOMAIN_SOCK).is_ok() {
-        if let Err(_err) = fs::remove_file(&DOMAIN_SOCK) {
-            panic!("Error removing file: {}", _err);
+    // Remove existing socket if it already exists
+    if fs::metadata(DOMAIN_SOCKET_PATH).is_ok() {
+        if let Err(remove_err) = fs::remove_file(DOMAIN_SOCKET_PATH) {
+            panic!("Failed to remove existing socket: {remove_err}");
         }
     }
 
-    let listener = UnixListener::bind(DOMAIN_SOCK)?;
+    let listener = UnixListener::bind(DOMAIN_SOCKET_PATH)?;
 
-    println!("Socket HTTP server listening on {}", DOMAIN_SOCK);
+    println!("Socket HTTP server listening on {DOMAIN_SOCKET_PATH}");
 
-    // accept connections and process them, spawning a new thread for each one
+    // Accept connections and process them, spawning a new thread for each one
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                // connection succeeded
-                println!("Got a client");
+                println!("Got a client connection");
                 thread::spawn(|| handle_client(stream));
             }
-            Err(err) => {
-                // connection failed
-                eprintln!("Error listening: {}", err);
+            Err(error) => {
+                eprintln!("Error listening: {error}");
                 break;
             }
         }
     }
+
     Ok(())
 }
 
 fn handle_client(mut stream: UnixStream) -> std::io::Result<()> {
-    // Read data from the client
-    let mut buffer = [0; 1024];
+    // Read request from client
+    let mut buffer = [0u8; 1024];
     let bytes_read = stream.read(&mut buffer)?;
+
     if bytes_read == 0 {
-        eprintln!("Client disconnected");
+        eprintln!("Client disconnected without sending data");
         return Ok(());
     }
 
-    let received = String::from_utf8_lossy(&buffer[..bytes_read]);
-    println!("Received request: {}", received);
+    let received_request = std::str::from_utf8(&buffer[..bytes_read])
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-    let message = socket_http_server::execute_command(&received);
+    println!("Received request:\n{received_request}");
 
-    // Send HTTP response
+    let response = socket_http_server::execute_command(received_request);
+
+    // Prepare HTTP response
     stream.write_all(b"HTTP/1.1 200 OK\r\n")?;
     stream.write_all(b"Content-Type: text/plain\r\n")?;
 
-    match message {
-        Some(s) => {
-            let content = format!("{}", s);
-            stream.write_all(format!("Content-Length: {}\r\n", content.len()).as_bytes())?;
+    match response {
+        Some(response_body) => {
+            let content_length = response_body.len();
+            stream.write_all(format!("Content-Length: {content_length}\r\n").as_bytes())?;
             stream.write_all(b"\r\n")?;
-            stream.write_all(content.as_bytes())?;
+            stream.write_all(response_body.as_bytes())?;
         }
         None => {
             stream.write_all(b"Content-Length: 0\r\n")?;
             stream.write_all(b"\r\n")?;
-            eprintln!("HTTP response issued with zero length");
+            eprintln!("Warning: HTTP response issued with zero-length body");
         }
     }
 

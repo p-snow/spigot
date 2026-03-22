@@ -1,78 +1,108 @@
 use std::collections::HashMap;
-use std::process::Command;
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 
-/// Parse HTTP header and extract command parameters
+/// Parses an HTTP header and extracts command parameters based on the request path.
+///
+/// Expected format: `GET /path?param1=value1&param2=value2 HTTP/1.1`
+///
+/// # Arguments
+/// * `header` - The raw HTTP request header string
+///
+/// # Returns
+/// An Option containing the result of executing the command, or None if parsing fails
 pub fn execute_command(header: &str) -> Option<String> {
-    let mut params: HashMap<String, String> = HashMap::new();
+    let mut parameters = HashMap::new();
 
     // Parse the first line of the header
-    if let Some(first_line) = header.lines().next() {
-        let parts: Vec<&str> = first_line.split_whitespace().collect();
+    let first_line = header.lines().next()?;
 
-        if parts.len() >= 2 && parts[0] == "GET" {
-            let query_parts: Vec<&str> = parts[1].split("?").collect();
-            let path = query_parts[0];
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
 
-            // Parse query parameters
-            if query_parts.len() > 1 {
-                for q in query_parts[1].split("&") {
-                    if let Some((key, value)) = q.split_once('=') {
-                        params.insert(key.to_string(), value.to_string());
-                    }
-                }
-            }
-
-            // Handle the /info/fs/avail endpoint
-            match path {
-                "/info/fs/avail" => {
-                    if let Some(file_param) = params.get("file") {
-                        return get_filesystem_availability(file_param);
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    None
-}
-
-/// Get filesystem availability for a given file system
-pub fn get_filesystem_availability(fs: &str) -> Option<String> {
-    // Execute df command to get disk usage info
-    let output = Command::new("df")
-        .arg("-h")
-        .arg(fs)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("Failed to execute df command");
-
-    if !output.status.success() {
-        eprintln!("df command failed: {}", String::from_utf8_lossy(&output.stderr));
+    // Validate GET method and expected path length
+    if parts.len() < 2 || parts[0] != "GET" {
         return None;
     }
 
-    // Extract the available space from the second line (skip header)
-    let output_str = String::from_utf8_lossy(&output.stdout);
+    let query_path = parts[1];
+
+    // Split path and query parameters
+    let (path, query_string) = query_path.split_once('?').unwrap_or((query_path, ""));
+
+    // Parse query parameters (if present)
+    for param in query_string.split('&') {
+        if let Some((key, value)) = param.split_once('=') {
+            parameters.insert(key.to_string(), value.to_string());
+        }
+    }
+
+    // Handle filesystem availability endpoint
+    handle_filesystem_endpoint(path, &parameters)
+}
+
+/// Handles filesystem availability queries.
+///
+/// # Arguments
+/// * `path` - The requested path (e.g., "/info/fs/avail")
+/// * `parameters` - Query parameters from the request
+///
+/// # Returns
+/// A string containing the available space in human-readable format, or None if unavailable
+fn handle_filesystem_endpoint(
+    path: &str,
+    parameters: &HashMap<String, String>,
+) -> Option<String> {
+    match path {
+        "/info/fs/avail" => {
+            let file_path = parameters.get("file")?;
+            get_filesystem_availability(file_path)
+        }
+        _ => None,
+    }
+}
+
+/// Retrieves filesystem availability information using the `df` command.
+///
+/// # Arguments
+/// * `filesystem_path` - The filesystem path to query (e.g., "/", "/tmp", "ext4:/dev/sda1")
+///
+/// # Returns
+/// A string containing the available space in human-readable format, or None if the command fails
+fn get_filesystem_availability(filesystem_path: &str) -> Option<String> {
+    // Execute `df` command to get disk usage information
+    let df_output = Command::new("df")
+        .arg("-h")
+        .arg(filesystem_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .ok()?;
+
+    if !df_output.status.success() {
+        eprintln!(
+            "df command failed: {}",
+            String::from_utf8_lossy(&df_output.stderr)
+        );
+        return None;
+    }
+
+    // Extract information from df output
+    let output_str = String::from_utf8_lossy(&df_output.stdout);
     let lines: Vec<&str> = output_str.lines().collect();
 
-    if lines.len() < 2 {
+    // Skip header line and ensure we have data
+    let data_line = lines.get(1)?;
+
+    // Parse the data line (format: "Filesystem Size Used Avail Use% Mounted on")
+    let data_parts: Vec<&str> = data_line.split_whitespace().collect();
+
+    // Verify we have the expected number of columns
+    if data_parts.len() < 4 {
         eprintln!("Unexpected df output format");
         return None;
     }
 
-    // Parse the second line to extract available space
-    let second_line = lines[1].split_whitespace().collect::<Vec<&str>>();
-
-    if second_line.len() < 4 {
-        eprintln!("Unexpected df output format in second line");
-        return None;
-    }
-
     // The fourth column contains the available space
-    Some(second_line[3].to_string())
+    Some(data_parts[3].to_string())
 }
 
 #[cfg(test)]
@@ -83,8 +113,7 @@ mod tests {
     fn test_execute_command_parses_get_request() {
         let header = "GET /info/fs/avail?file=/tmp HTTP/1.1\r\nHost: localhost\r\n\r\n";
         let result = execute_command(header);
-        // This will return None since it calls external df command,
-        // but we test the parsing works correctly
+        // Result depends on external df command, but parsing should succeed
         assert!(result.is_none() || result.is_some());
     }
 
@@ -105,6 +134,13 @@ mod tests {
     #[test]
     fn test_execute_command_handles_non_get_request() {
         let header = "POST /info/fs/avail?file=/tmp HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        let result = execute_command(header);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_execute_command_handles_missing_query_string() {
+        let header = "GET /info/fs/avail HTTP/1.1\r\nHost: localhost\r\n\r\n";
         let result = execute_command(header);
         assert_eq!(result, None);
     }

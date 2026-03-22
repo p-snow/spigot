@@ -1,41 +1,49 @@
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
-use std::io::{Write, Read};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
 #[test]
 fn test_socket_server_responds_to_valid_request() {
-    // Skip this test on CI environments since we need a real socket
-    // This test is meant to run when the server can actually be started
+    // Skip this test in CI environments since it requires a running socket
+    // Intended to be run when the server can be started locally
     let _ = std::fs::remove_file("/tmp/test-socket.sock");
 
-    // Start the server in background
+    // Start the server in the background
     let mut server_process = Command::new("cargo")
         .args(["run", "--bin", "socket-http-server"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("Failed to start server");
+        .expect("Failed to start server process");
 
-    // Give the server time to start
-    thread::sleep(Duration::from_millis(100));
+    // Allow server time to initialize and create socket
+    thread::sleep(Duration::from_secs(2));
 
-    // Try to connect to socket
-    let mut stream = UnixStream::connect("/tmp/machine-info.sock").expect("Failed to connect to socket");
+    // Attempt to connect to the socket
+    let mut stream = UnixStream::connect("/tmp/socket-http-server.sock")
+        .expect("Failed to connect to socket at /tmp/socket-http-server.sock");
 
-    // Send a valid HTTP request
-    let request = "GET /info/fs/avail?file=/ HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    stream.write_all(request.as_bytes()).expect("Failed to send request");
+    // Send a valid HTTP GET request
+    let request_payload = "GET /info/fs/avail?file=/ HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    stream.write_all(request_payload.as_bytes()).expect("Failed to send request");
 
-    // Read the response
-    let mut buffer = [0; 1024];
-    let bytes_read = stream.read(&mut buffer).expect("Failed to read response");
+    // Read the server's response
+    let mut response_buffer = [0u8; 1024];
+    let bytes_received = stream
+        .read(&mut response_buffer)
+        .expect("Failed to read server response");
 
-    // Verify we got a valid response (it will be empty since df command runs in test env)
-    let response = String::from_utf8_lossy(&buffer[..bytes_read]);
-    assert!(response.starts_with("HTTP/1.1 200 OK"));
+    let response_text = String::from_utf8_lossy(&response_buffer[..bytes_received]);
 
-    // Kill the server
-    server_process.kill().expect("Failed to kill server");
+    // Verify we received a successful HTTP response
+    assert!(
+        response_text.starts_with("HTTP/1.1 200 OK"),
+        "Expected 200 OK response, got: {response_text}"
+    );
+
+    // Clean up: terminate the server process
+    let _ = server_process.kill();
+    let _ = server_process.wait();
 }
