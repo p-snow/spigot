@@ -1,31 +1,99 @@
-A simple socket HTTP server
+* Socket HTTP Server
 
-This is a simple implementation of a Unix Domain Socket server providing an HTTP service that interprets the request into a command string and invokes it on the machine.
+A simple implementation of a Unix Domain Socket server providing an HTTP service that interprets requests into command strings and invokes them on the machine.
+
+* Architecture
+
+** Unix Domain Socket**
+
+The server listens on `/tmp/machine-info.sock` for incoming HTTP requests over a Unix socket. This local communication channel provides a secure and efficient way for local applications to access external services.
+
+** HTTP/1.1 Response Protocol**
+
+The server responds with standard HTTP/1.1 responses:
+- Uses plain text responses
+- Returns Content-Length headers for proper response parsing
+- Returns 0 length for unsupported/unknown requests
+
+** Request Handling**
+
+The server parses incoming HTTP GET requests and extracts:
+- Request path (endpoint)
+- Query parameters
+- Uses a simple parser that splits on whitespace and `&` characters
+
+** Command Execution**
+
+For each valid request, the server delegates command execution to the `lib.rs` module which:
+1. Parses the HTTP request into command parameters
+2. Matches the path to supported endpoints
+3. Invokes system commands via Rust's `std::process::Command`
 
 * Installation
 
-- building the code
+- Building the code
   #+begin_example
   cargo build
   #+end_example
-- running the server
+
+- Running the server
   #+begin_example
   cargo run
   #+end_example
 
-* Supported HTTP GET endpoints
-:PROPERTIES:
-:CREATED:  [2026-03-20 Fri 15:16]
-:END:
+* Configuration
+
+** Socket Location**
+
+The server configures the socket path in `main.rs`:
+- Default path: `/tmp/machine-info.sock`
+- Socket file is removed if it already exists before binding
+
+** Buffer Size**
+
+The client read buffer is defined in `main.rs`:
+- Default size: 1024 bytes
+
+* Directory Structure
+
+#+begin_example
+src/
+├── lib.rs     - Command parsing, endpoint routing, and system command execution
+└── main.rs    - Server initialization, Unix socket handling, and HTTP response delivery
+#+end_example
+
+* Supported HTTP GET Endpoints
 
 ** /info/fs/avail
-:PROPERTIES:
-:CREATED:  [2026-03-20 Fri 15:16]
-:END:
 
 Getting remaining disk space for file system <fs>
 
-URL example
+URL example:
 #+begin_example
-https://<host>/info/fs/avail?file=<fs>
+unix:///tmp/machine-info.sock/info/fs/avail?file=/tmp
 #+end_example
+
+Implementation:
+- Invokes the system `df -h <fs>` command
+- Parses the output to extract available space (fourth column of second line)
+- Returns plain text value
+
+Query Parameters:
+- **file**: Required parameter specifying the file system path (e.g., `/tmp`, `/var`, `/home`)
+
+** Implementation Notes**
+
+The system uses external commands for actual functionality, as the `df` command provides the most accurate filesystem information. This design follows the principle of delegating platform-specific operations to well-tested system tools while providing a clean HTTP interface.
+
+Error Handling:
+- Invalid requests return HTTP 200 with zero content length (graceful handling)
+- Command execution failures are logged and return None
+- Socket cleanup errors trigger a panic, preventing stale socket files
+
+** Testing**
+
+The repository includes unit tests in `lib.rs` for:
+- Request parsing logic
+- Missing/invalid parameter handling
+- Unsupported path handling
+- Non-GET request handling
